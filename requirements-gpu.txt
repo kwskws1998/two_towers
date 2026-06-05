@@ -1,0 +1,26 @@
+# GPU/server dependency file after PyTorch is installed.
+# This intentionally does NOT install torch, torchvision, torchaudio, or CUDA wheels.
+# For a fresh conda env, install requirements-cuda121.txt instead.
+
+accelerate==0.29.1
+numpy==1.26.4
+pandas==2.2.1
+scipy==1.14.0
+scikit-learn==1.5.0
+transformers==4.40.0
+tokenizers==0.19.1
+sentencepiece==0.2.0
+safetensors==0.4.2
+tqdm==4.67.1
+
+requests==2.32.3
+gdown==6.0.0
+importlib_resources==6.5.2
+
+matplotlib==3.8.4
+seaborn==0.13.2
+statsmodels==0.14.4
+
+wandb==0.18.3
+
+git+https://github.com/jonbarron/robust_loss_pytorch.git

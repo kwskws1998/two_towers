@@ -15,6 +15,7 @@
 #   DATA_SEED=...      # split seed for fold1/fold2 (default: 42)
 #   DATA_ZIP_URL=...   # Google Drive zip URL for English TSV bundle
 #   DATA_ZIP_NAME=...  # local filename for downloaded zip (default: english_va_bundle.zip)
+#   REQUIREMENTS_FILE=... # dependency file (default: requirements-gpu.txt)
 
 set -euo pipefail
 
@@ -38,6 +39,7 @@ DATA_DIR="${DATA_DIR:-./data}"
 DATA_SEED="${DATA_SEED:-42}"
 DATA_ZIP_URL="${DATA_ZIP_URL:-https://drive.google.com/file/d/1xXM32nva_4I3EAVAOrQ84L16f-LjsJbj/view?usp=sharing}"
 DATA_ZIP_NAME="${DATA_ZIP_NAME:-english_va_bundle.zip}"
+REQUIREMENTS_FILE="${REQUIREMENTS_FILE:-requirements-gpu.txt}"
 
 echo "============================================================"
 echo " VA+Gaze one-shot install"
@@ -50,8 +52,8 @@ echo "[1/3] Python dependencies"
 if [[ "$SKIP_DEPS" == "1" ]]; then
   echo "  - skip (SKIP_DEPS=1)"
 else
-  "$PYTHON_BIN" -m pip install -U pip setuptools wheel
-  "$PYTHON_BIN" -m pip install -r requirements.txt
+  "$PYTHON_BIN" -m pip install -U pip wheel "setuptools<82"
+  "$PYTHON_BIN" -m pip install -r "$REQUIREMENTS_FILE"
 fi
 
 echo

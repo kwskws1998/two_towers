@@ -5,7 +5,7 @@ from typing import Optional
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from transformers import AutoModel
+from transformers import AutoModel, AutoModelForSequenceClassification
 from transformers.utils import ModelOutput
 
 
@@ -31,9 +31,12 @@ class GazeAffectClipModel(nn.Module):
         dropout=0.1,
         max_fix_cache_size=20000,
         shuffle_gaze=False,
+        init_vad_checkpoint=None,
     ):
         super().__init__()
-        self.encoder = AutoModel.from_pretrained(checkpoint)
+        self.init_vad_checkpoint = init_vad_checkpoint
+        encoder_source = init_vad_checkpoint or checkpoint
+        self.encoder = AutoModel.from_pretrained(encoder_source)
         self.config = self.encoder.config
         self.tokenizer = tokenizer
         self.hidden_size = self.config.hidden_size
@@ -84,6 +87,98 @@ class GazeAffectClipModel(nn.Module):
         self.fixation_cache = OrderedDict()
         self.max_fix_cache_size = max_fix_cache_size
         self.fp_model = self._load_et2_predictor(et2_checkpoint_path)
+        if init_vad_checkpoint:
+            self._load_vad_head(init_vad_checkpoint)
+
+    def _copy_tensor_if_shape_matches(self, source, source_key, target_param, target_name):
+        tensor = source.get(source_key)
+        if tensor is None:
+            return False
+        if tuple(tensor.shape) != tuple(target_param.shape):
+            print(
+                f"[clip_alignment] skip {source_key} -> {target_name}: "
+                f"shape {tuple(tensor.shape)} != {tuple(target_param.shape)}"
+            )
+            return False
+        with torch.no_grad():
+            target_param.copy_(tensor.to(device=target_param.device, dtype=target_param.dtype))
+        return True
+
+    def _load_vad_head(self, init_vad_checkpoint):
+        try:
+            vad_model = AutoModelForSequenceClassification.from_pretrained(
+                init_vad_checkpoint,
+                num_labels=2,
+            )
+        except Exception as exc:
+            print(f"[clip_alignment] VAD head init skipped: {exc}")
+            return
+
+        state = vad_model.state_dict()
+        loaded = []
+        if self._copy_tensor_if_shape_matches(
+            state,
+            "classifier.dense.weight",
+            self.affect_pre_classifier.weight,
+            "affect_pre_classifier.weight",
+        ):
+            loaded.append("classifier.dense.weight")
+        if self._copy_tensor_if_shape_matches(
+            state,
+            "classifier.dense.bias",
+            self.affect_pre_classifier.bias,
+            "affect_pre_classifier.bias",
+        ):
+            loaded.append("classifier.dense.bias")
+        if self._copy_tensor_if_shape_matches(
+            state,
+            "classifier.out_proj.weight",
+            self.vad_head.weight,
+            "vad_head.weight",
+        ):
+            loaded.append("classifier.out_proj.weight")
+        if self._copy_tensor_if_shape_matches(
+            state,
+            "classifier.out_proj.bias",
+            self.vad_head.bias,
+            "vad_head.bias",
+        ):
+            loaded.append("classifier.out_proj.bias")
+
+        if self._copy_tensor_if_shape_matches(
+            state,
+            "pre_classifier.weight",
+            self.affect_pre_classifier.weight,
+            "affect_pre_classifier.weight",
+        ):
+            loaded.append("pre_classifier.weight")
+        if self._copy_tensor_if_shape_matches(
+            state,
+            "pre_classifier.bias",
+            self.affect_pre_classifier.bias,
+            "affect_pre_classifier.bias",
+        ):
+            loaded.append("pre_classifier.bias")
+        if self._copy_tensor_if_shape_matches(
+            state,
+            "classifier.weight",
+            self.vad_head.weight,
+            "vad_head.weight",
+        ):
+            loaded.append("classifier.weight")
+        if self._copy_tensor_if_shape_matches(
+            state,
+            "classifier.bias",
+            self.vad_head.bias,
+            "vad_head.bias",
+        ):
+            loaded.append("classifier.bias")
+
+        del vad_model
+        if loaded:
+            print(f"[clip_alignment] initialized VAD head from {init_vad_checkpoint}: {loaded}")
+        else:
+            print(f"[clip_alignment] no compatible VAD head tensors found in {init_vad_checkpoint}")
 
     def _load_et2_predictor(self, et2_checkpoint_path):
         try:
@@ -190,7 +285,10 @@ class GazeAffectClipModel(nn.Module):
     def _pool_affect(self, encoder_outputs):
         pooled = encoder_outputs.last_hidden_state[:, 0, :]
         pooled = self.affect_pre_classifier(pooled)
-        pooled = torch.relu(pooled)
+        if self.config.model_type == "distilbert":
+            pooled = torch.relu(pooled)
+        else:
+            pooled = torch.tanh(pooled)
         return self.affect_dropout(pooled)
 
     def forward(

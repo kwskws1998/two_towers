@@ -15,12 +15,40 @@ zero-shot test: IEMOCAP only
 Main entry point:
 
 ```bash
+conda env create -f environment.yml
+conda activate gaze_affect_clip
+python -m pip install -U pip wheel "setuptools<82"
+python -m pip install -r requirements-cuda121.txt
+
+python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available())"
+```
+
+Same setup as a script:
+
+```bash
+bash scripts/setup_conda_gpu.sh
+conda activate gaze_affect_clip
+```
+
+Then prepare data and train:
+
+```bash
 python prepare_english_data.py --output-dir data --seed 42
+
+python train_vad_single.py xlmroberta-base mse \
+  --data-dir data \
+  --split-dir data_vad_noiemocap \
+  --holdout-dataset IEMOCAP \
+  --batch-size 16 \
+  --maxlen 200 \
+  --train-epochs 10 \
+  --learning-rate 6e-6
 
 python train_clip_style.py xlmroberta-base mse+ccc \
   --data-dir data \
   --split-dir data_clip_noiemocap \
   --holdout-dataset IEMOCAP \
+  --init-vad-checkpoint model_vad_single/<timestamp>/final_model \
   --et2-checkpoint ./checkpoints/et_predictor2_seed123 \
   --projection-dim 256 \
   --tau 0.07 \
@@ -32,6 +60,11 @@ python train_clip_style.py xlmroberta-base mse+ccc \
 
 If the ET2 checkpoint is missing, `train_clip_style.py` tries to download
 `et_predictor2_seed123.safetensors` from `skboy/et_prediction_2`.
+
+Use `train_vad_single.py` for the one-model VAD checkpoint that initializes the
+CLIP-style affect tower via `--init-vad-checkpoint`. The inherited
+`train_model.py` keeps the original 2-fold out-of-fold evaluation behavior and
+saves two fold models.
 
 Outputs are written under `PredsClip/<timestamp>_<host>/`:
 

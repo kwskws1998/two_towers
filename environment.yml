@@ -1,0 +1,6 @@
+name: gaze_affect_clip
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip

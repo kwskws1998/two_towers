@@ -1,0 +1,13 @@
+# Fresh CUDA GPU environment install.
+# Run this inside the conda env created from environment.yml.
+#
+# This installs PyTorch CUDA 12.1 wheels first, then the non-torch project deps.
+
+--index-url https://download.pytorch.org/whl/cu121
+--extra-index-url https://pypi.org/simple
+
+torch
+torchvision
+torchaudio
+
+-r requirements-gpu.txt
