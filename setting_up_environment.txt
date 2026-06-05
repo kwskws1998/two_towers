@@ -1,0 +1,174 @@
+SETTING UP ENVIRONMENT (single source of truth)
+Last updated: 2026-04-27
+
+IMPORTANT RULE
+- If setup/install/train commands change, update this file in the SAME commit.
+
+==================================================
+0) PRE-REQ
+==================================================
+- OS: Linux/macOS
+- Python: 3.10-3.12 recommended
+- GPU: CUDA environment for torch==2.2.2 if training on GPU
+- Disk: at least 40 GB free recommended
+
+==================================================
+1) CLONE + VENV
+==================================================
+git clone https://github.com/kwskws1998/multilingual_va_prediction.git
+cd multilingual_va_prediction
+
+python3 -m venv .venv
+source .venv/bin/activate
+python -V
+
+==================================================
+2) ONE-SHOT INSTALL (recommended)
+==================================================
+# Installs dependencies + ET setup + English data build
+bash install.sh
+
+Useful options:
+# skip pip reinstall on reruns
+SKIP_DEPS=1 bash install.sh
+
+# rebuild dataset files
+FORCE_DATA=1 bash install.sh
+
+# include ET model 1 setup too
+WITH_ET1=1 bash install.sh
+
+# custom data zip URL/name
+DATA_ZIP_URL="https://drive.google.com/file/d/1xXM32nva_4I3EAVAOrQ84L16f-LjsJbj/view?usp=sharing" \
+DATA_ZIP_NAME="english_va_bundle.zip" \
+bash install.sh
+
+==================================================
+3) MANUAL INSTALL (if you do not want one-shot)
+==================================================
+pip install -r requirements.txt
+
+# ET2 checkpoint setup (auto-download from HF if missing)
+python setup_et_models.py --skip-install --skip-et1 --et2-checkpoint ./checkpoints/et_predictor2_seed123
+
+# Build fold datasets (downloads zip from Google Drive via gdown)
+python prepare_english_data.py --output-dir data --seed 42 --force
+
+Expected outputs:
+- data/full_dataset_fold1.csv
+- data/full_dataset_fold2.csv
+- data/full_dataset_english_all.csv
+
+# Optional: exclude one or more source datasets while keeping existing folds
+python filter_datasets.py --input-dir data --output-dir data_no_iemocap --exclude IEMOCAP
+
+==================================================
+4) TRAINING COMMANDS
+==================================================
+A) Baseline (no gaze concat)
+python train_model.py xlmroberta-large mse \
+  --batch-size 8 \
+  --maxlen 200 \
+  --optim adamw_torch \
+  --save-total-limit 1
+
+B) GazeConcat with ET2 (all 5 features)
+python train_model.py xlmroberta-large mse \
+  --use-gaze-concat \
+  --et2-checkpoint ./checkpoints/et_predictor2_seed123 \
+  --features-used 1,1,1,1,1 \
+  --fp-dropout 0.1,0.3 \
+  --batch-size 8 \
+  --maxlen 200 \
+  --optim adamw_torch \
+  --save-total-limit 1
+
+C) GazeConcat with fcomb2.2 (FFD+TRT)
+python train_model.py xlmroberta-large mse \
+  --use-gaze-concat \
+  --et2-checkpoint ./checkpoints/et_predictor2_seed123 \
+  --features-used 0,1,0,1,0 \
+  --fp-dropout 0.1,0.3 \
+  --gaze-add-scale 0.05 \
+  --batch-size 8 \
+  --maxlen 200 \
+  --optim adamw_torch \
+  --save-total-limit 1
+
+D) GazeAdd with fcomb2.2 (FFD+TRT)
+python train_model.py xlmroberta-large mse \
+  --use-gaze-add \
+  --et2-checkpoint ./checkpoints/et_predictor2_seed123 \
+  --features-used 0,1,0,1,0 \
+  --fp-dropout 0.1,0.3 \
+  --batch-size 8 \
+  --maxlen 200 \
+  --optim adamw_torch \
+  --save-total-limit 1
+
+Note:
+- With --use-gaze-concat, keep --maxlen <= 255.
+- --use-gaze-concat and --use-gaze-add are mutually exclusive.
+- To train/evaluate on a filtered dataset folder, add: --data-dir data_no_iemocap
+
+==================================================
+5) METRICS AFTER TRAINING
+==================================================
+- A run directory is created under Preds/<timestamp>_<host>/
+- After fold1 + fold2 complete, these should exist:
+  - predictions_fold1.csv
+  - predictions_fold2.csv
+  - all_predictions.csv
+  - overall_metrics.csv
+  - overall_metrics.json
+  - dataset_metrics.csv
+
+Recompute overall metrics manually:
+python compute_overall_metrics.py Preds/<run_dir> --data-dir data
+
+==================================================
+6) QUICK HEALTH CHECK
+==================================================
+# Verify ET2 checkpoint is present
+ls -lh checkpoints/et_predictor2_seed123* checkpoints/et_predictor2_seed123.safetensors
+
+# Verify fold files exist
+ls -lh data/full_dataset_fold1.csv data/full_dataset_fold2.csv
+
+# Verify latest run outputs
+RUN=$(ls -1t Preds | head -n 1)
+ls -lh "Preds/$RUN"/predictions_fold1.csv "Preds/$RUN"/predictions_fold2.csv
+cat "Preds/$RUN"/overall_metrics.csv
+
+==================================================
+7) TROUBLESHOOTING
+==================================================
+- ModuleNotFoundError after install:
+  - Ensure venv is active: source .venv/bin/activate
+  - Reinstall: pip install -r requirements.txt
+
+- ET2 checkpoint not found:
+  - Re-run: python setup_et_models.py --skip-install --skip-et1 --et2-checkpoint ./checkpoints/et_predictor2_seed123
+
+- Missing data files:
+  - Re-run: python prepare_english_data.py --output-dir data --seed 42 --force
+
+- W&B prompt blocks training:
+  - Disable online sync: export WANDB_MODE=offline
+
+- No space left on device:
+  - Use: --save-total-limit 1
+  - Optionally disable periodic checkpoints: --save-strategy no
+
+==================================================
+8) CURRENT ENTRYPOINT FILES
+==================================================
+Use these root commands (wrappers):
+- train_model.py
+- setup_et_models.py
+- prepare_english_data.py
+- filter_datasets.py
+- compute_overall_metrics.py
+
+Core implementation is under:
+- src/va_gaze/
