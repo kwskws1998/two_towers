@@ -61,6 +61,20 @@ python train_clip_style.py xlmroberta-base mse+ccc \
 If the ET2 checkpoint is missing, `train_clip_style.py` tries to download
 `et_predictor2_seed123.safetensors` from `skboy/et_prediction_2`.
 
+Evaluate a saved CLIP-style model from Hugging Face without retraining:
+
+```bash
+hf download YOUR_HF_ID/gaze-affect-clip-xlmrl-all-et \
+  --local-dir hf_models/gaze-affect-clip-xlmrl-all-et
+
+python evaluate_clip_style.py \
+  --checkpoint-dir hf_models/gaze-affect-clip-xlmrl-all-et \
+  --data-dir data \
+  --split-dir data_clip_noiemocap \
+  --split iemocap_zeroshot \
+  --batch-size 1
+```
+
 Use `train_vad_single.py` for the one-model VAD checkpoint that initializes the
 CLIP-style affect tower via `--init-vad-checkpoint`. The inherited
 `train_model.py` keeps the original 2-fold out-of-fold evaluation behavior and
